@@ -26,6 +26,28 @@ Requires Node.js 20+ and `git`; `ffmpeg` is needed for audio capture (the
 installer will try to install it via Homebrew on macOS). On macOS, system-audio
 capture also needs the Xcode Command Line Tools (`swiftc`).
 
+### Uninstall
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/muzafferkadir/groqscribe/main/scripts/uninstall.sh | bash
+```
+
+Removes the `groqscribe` binary, the `~/.groqscribe` source clone, and the
+`~/.meet-groq-tr` config (including your saved API key). It only cleans the
+`PATH` entry that this installer added — other tools sharing `~/.local/bin`
+are left untouched. It asks for confirmation first; to skip it, append `-y`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/muzafferkadir/groqscribe/main/scripts/uninstall.sh | bash -s -- -y
+```
+
+To keep your saved API key and usage stats (so a reinstall doesn't re-prompt),
+add `--keep-config`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/muzafferkadir/groqscribe/main/scripts/uninstall.sh | bash -s -- -y --keep-config
+```
+
 ### Manual install (from source)
 
 ```bash
