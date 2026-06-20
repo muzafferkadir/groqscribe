@@ -1,0 +1,28 @@
+{
+  "name": "groqscribe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Terminal TUI for live microphone and system audio transcription with Groq Whisper.",
+  "bin": {
+    "groqscribe": "./cli/main.js"
+  },
+  "scripts": {
+    "start": "node cli/main.js",
+    "main": "node cli/main.js",
+    "cli:mic": "node cli/main.js --mic",
+    "cli:ambient": "node cli/main.js --ambient",
+    "cli:system": "node cli/main.js --system-audio",
+    "list-devices": "node cli/main.js --list-devices",
+    "setup-macos-audio": "bash scripts/setup-macos-audio.sh",
+    "build-system-audio-helper": "bash scripts/build-system-audio-helper.sh",
+    "build:executable": "node scripts/build-executable.js",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  }
+}

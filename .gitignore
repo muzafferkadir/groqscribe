@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+dist/
+bin/
+
+# Runtime output
+transcription.txt
+*.log
+
+# Packaging
+*.zip
+
+# OS / editor
+.DS_Store
+.env
+.vscode/
+.idea/
