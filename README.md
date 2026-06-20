@@ -65,7 +65,7 @@ cp dist/groqscribe ~/.local/bin/groqscribe
 npm start
 ```
 
-On first run, if no API key is found, it prompts and saves it to `~/.meet-groq-tr/config.json`.
+On first run, if no API key is found, it prompts and saves it to `~/.meet-groq-tr/config.json` (get one at https://console.groq.com/keys).
 
 ## Examples
 
@@ -86,7 +86,13 @@ npm start -- --list-devices
 - `R` restart
 - `S` settings panel
 - `O` original text
+- `↑` / `↓` scroll transcript (PgUp/PgDn by 10); return to live with `↓`
 - `Q` quit
+
+The header shows a blinking red `●` next to each source (`MIC`/`SYS`) while it is
+actively capturing. On first run, if no API key is found, it prompts and saves
+it to `~/.meet-groq-tr/config.json` (get a key at
+https://console.groq.com/keys).
 
 ## Single-file executable
 

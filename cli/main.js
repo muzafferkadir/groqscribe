@@ -71,6 +71,7 @@ const state = {
   startedAt: Date.now(),
   outputPath,
   activeSources: [],
+  transcriptScroll: 0,
 };
 
 const captures = new Map();
@@ -91,7 +92,7 @@ setupTerminal();
 startRenderLoop();
 
 if (!apiKey) {
-  state.error = 'GROQ_API_KEY is missing. Example: export GROQ_API_KEY="gsk_..."';
+  state.error = 'GROQ_API_KEY missing. Get one at https://console.groq.com/keys — example: export GROQ_API_KEY="gsk_..."';
   state.status = 'Startup failed';
   requestRender();
 } else {
@@ -286,6 +287,7 @@ async function processSegment(no, segment, source) {
   const item = { no, source, timestamp, text: translated || original, original };
   state.lines.push(item);
   if (state.lines.length > 300) state.lines.shift();
+  if (state.transcriptScroll > 0) state.transcriptScroll += 1;
 
   appendTranscript(outputPath, item, state.showOriginal);
   state.status = `[${no}] Saved: transcription.txt`;
@@ -324,6 +326,10 @@ function setupTerminal() {
     if (key?.name === 'b' || key?.name === 'c') return toggleSource('system');
     if (key?.name === 'r') return restartCaptures();
     if (key?.name === 'l') return cycleWhisperLanguage();
+    if (key?.name === 'up') return scrollTranscript(1);
+    if (key?.name === 'down') return scrollTranscript(-1);
+    if (key?.name === 'pageup') return scrollTranscript(10);
+    if (key?.name === 'pagedown') return scrollTranscript(-10);
   });
 
   process.on('SIGINT', shutdown);
@@ -332,13 +338,25 @@ function setupTerminal() {
 
 function startRenderLoop() {
   renderTimer = setInterval(() => {
-    if (needsRender) render();
+    // re-render every tick while capturing so the REC dots can blink
+    if (needsRender || isCapturingLive()) render();
   }, 120);
   render();
 }
 
 function requestRender() {
   needsRender = true;
+}
+
+function isCapturingLive() {
+  return state.running && !state.paused && captures.size > 0;
+}
+
+function scrollTranscript(delta) {
+  if (!state.lines.length) return;
+  const max = Math.max(0, state.lines.length - 1);
+  state.transcriptScroll = Math.max(0, Math.min(max, state.transcriptScroll + delta));
+  requestRender();
 }
 
 function render() {
@@ -350,7 +368,10 @@ function render() {
   const contentHeight = Math.max(5, height - 4);
 
   const screen = [];
-  screen.push(color(` groqscribe `, 'inverse') + ' ' + trim(state.status, width - 14));
+  const indicators = recordingIndicators();
+  const indLen = stripAnsi(indicators).length;
+  const statusText = trim(state.status, width - 14 - indLen - (indLen ? 1 : 0));
+  screen.push(color(` groqscribe `, 'inverse') + ' ' + indicators + (indLen ? ' ' : '') + statusText);
 
   const transcriptRows = buildTranscriptRows(mainWidth, contentHeight);
   const settingsRows = state.showSettings ? buildSettingsRows(settingsWidth, contentHeight) : [];
@@ -360,7 +381,7 @@ function render() {
     else screen.push(left);
   }
 
-  const footer = ' Space: pause/resume  M: mic  B: system audio  L: language  R: restart  S: settings  O: original  Q: quit ';
+  const footer = ' Space: pause  M: mic  B: system  L: lang  R: restart  S: settings  O: original  ↑/↓: scroll  Q: quit ';
   screen.push(color(trim(footer, width), 'inverse'));
   screen.push(color(trim(` Output: ${state.outputPath}`, width), 'dim'));
   process.stdout.write('\x1b[H\x1b[2J' + screen.join('\n'));
@@ -371,10 +392,16 @@ function buildTranscriptRows(width, height) {
   rows.push(color('Transcription', 'bold'));
   rows.push(color('─'.repeat(Math.max(1, width - 1)), 'dim'));
 
+  if (state.transcriptScroll > 0 && state.lines.length) {
+    rows.push(color(`↑ older transcript (${state.transcriptScroll} back) — press ↓ to return to live`, 'yellow'));
+  }
+
   if (state.error) rows.push(color(`Error: ${state.error}`, 'red'));
   if (!state.lines.length) rows.push(color('No transcript yet. Detected speech/audio will appear here.', 'dim'));
 
-  for (const item of state.lines.slice().reverse()) {
+  const items = state.lines.slice().reverse();
+  const offset = Math.min(state.transcriptScroll, Math.max(0, items.length));
+  for (const item of items.slice(offset)) {
     rows.push(color(`#${item.no} ${item.timestamp} [${item.source}]`, 'cyan'));
     rows.push(...wrap(item.text, width));
     if (state.showOriginal && item.original && item.original !== item.text) {
@@ -390,6 +417,26 @@ function buildTranscriptRows(width, height) {
 function sourceStateLabel(source, desired) {
   if (!desired) return 'off';
   return captures.has(source) ? 'on/active' : 'on/inactive';
+}
+
+function recordingIndicators() {
+  const blinkOn = Math.floor(Date.now() / 600) % 2 === 0;
+  const parts = [];
+  for (const source of ['mic', 'system']) {
+    const desired = source === 'mic' ? config.listenMic : config.listenSystemAudio;
+    if (!desired) continue;
+    const capturing = captures.has(source);
+    const label = source === 'mic' ? 'MIC' : 'SYS';
+    if (capturing && state.running && !state.paused) {
+      const dot = blinkOn ? color('●', 'red') : color('●', 'dim');
+      parts.push(`${dot} ${label}`);
+    } else if (capturing) {
+      parts.push(`${color('●', 'dim')} ${label}`);
+    } else {
+      parts.push(`${color('○', 'dim')} ${label}`);
+    }
+  }
+  return parts.join('  ');
 }
 
 function formatCurrentRequests() {
@@ -769,6 +816,7 @@ async function resolveApiKey(options) {
     if (saved) return String(saved).trim();
   }
 
+  process.stdout.write('\nGet a free Groq API key at: https://console.groq.com/keys\n\n');
   const entered = await promptSecret('Enter Groq API key (will be saved globally): ');
   const apiKey = entered.trim();
   if (!apiKey) return '';
@@ -928,6 +976,7 @@ function color(text, kind) {
     red: ['\x1b[31m', '\x1b[39m'],
     cyan: ['\x1b[36m', '\x1b[39m'],
     inverse: ['\x1b[7m', '\x1b[27m'],
+    yellow: ['\x1b[33m', '\x1b[39m'],
   };
   const pair = codes[kind] || ['', ''];
   return `${pair[0]}${text}${pair[1]}`;
