@@ -72,6 +72,7 @@ const state = {
   outputPath,
   activeSources: [],
   transcriptScroll: 0,
+  translateEnabled: Boolean(args.translate) && !args.noTranslate,
 };
 
 const captures = new Map();
@@ -295,7 +296,7 @@ async function processSegment(no, segment, source) {
 }
 
 function isTranslationEnabled() {
-  return Boolean(args.translate) && !args.noTranslate;
+  return state.translateEnabled;
 }
 
 function shouldSkipTranslation(text) {
@@ -330,6 +331,8 @@ function setupTerminal() {
     if (key?.name === 'down') return scrollTranscript(-1);
     if (key?.name === 'pageup') return scrollTranscript(10);
     if (key?.name === 'pagedown') return scrollTranscript(-10);
+    if (key?.name === 't') return toggleTranslation();
+    if (key?.name === 'g') return cycleTargetLanguage();
   });
 
   process.on('SIGINT', shutdown);
@@ -381,7 +384,7 @@ function render() {
     else screen.push(left);
   }
 
-  const footer = ' Space: pause  M: mic  B: system  L: lang  R: restart  S: settings  O: original  ↑/↓: scroll  Q: quit ';
+  const footer = ' Space:pause  M:mic  B:system  L:src lang  G:target  T:translate  R:restart  S:panel  O:original  ↑↓:scroll  Q:quit ';
   screen.push(color(trim(footer, width), 'inverse'));
   screen.push(color(trim(` Output: ${state.outputPath}`, width), 'dim'));
   process.stdout.write('\x1b[H\x1b[2J' + screen.join('\n'));
@@ -402,7 +405,8 @@ function buildTranscriptRows(width, height) {
   const items = state.lines.slice().reverse();
   const offset = Math.min(state.transcriptScroll, Math.max(0, items.length));
   for (const item of items.slice(offset)) {
-    rows.push(color(`#${item.no} ${item.timestamp} [${item.source}]`, 'cyan'));
+    const badge = item.source === 'mic' ? color('● MIC', 'cyan') : color('● SYS', 'magenta');
+    rows.push(`${color(`#${item.no}`, 'dim')} ${color(item.timestamp, 'dim')}  ${badge}`);
     rows.push(...wrap(item.text, width));
     if (state.showOriginal && item.original && item.original !== item.text) {
       rows.push(...wrap(`Original: ${item.original}`, width).map((line) => color(line, 'dim')));
@@ -454,39 +458,48 @@ function formatPendingQueues() {
 
 function buildSettingsRows(width, height) {
   const elapsed = Math.floor((Date.now() - state.startedAt) / 1000);
+  const sep = () => color('─'.repeat(Math.max(1, width - 1)), 'dim');
+  const group = (title) => color(color(title, 'bold'), 'dim');
+  const kv = (label, value) => `  ${color(label.padEnd(11), 'dim')}${value}`;
+  const translateState = isTranslationEnabled() ? color('on', 'green') : color('off', 'dim');
+
   const rows = [
-    color(' Settings / Status', 'bold'),
-    color('─'.repeat(Math.max(1, width - 1)), 'dim'),
-    `Whisper language: ${formatWhisperLanguage(config.sourceLanguage)}`,
-    `Target language: ${config.targetLanguage}`,
-    `Microphone: ${sourceStateLabel('mic', config.listenMic)}`,
-    `System audio: ${sourceStateLabel('system', config.listenSystemAudio)}`,
-    `Active sources: ${state.activeSources.join('+') || '-'}`,
-    `Recording: ${state.running && !state.paused ? 'continuous' : state.paused ? 'paused' : 'off'}`,
-    `Groq request: ${formatCurrentRequests()}`, 
-    `Status: ${state.paused ? 'paused' : state.running ? 'running' : 'off'}`,
-    `Elapsed: ${formatDuration(elapsed)}`,
-    `Segment: min ${args.minSegmentMs || DEFAULTS.minSegmentMs}ms`,
-    `Silence: ${args.silenceMs || DEFAULTS.silenceMs}ms`,
-    `20s+ silence: ${args.longSegmentSilenceMs || DEFAULTS.longSegmentSilenceMs}ms`,
-    `Threshold: ${args.threshold || DEFAULTS.threshold}`,
-    `Queue: ${formatPendingQueues()}`, 
-    `Model: ${args.speechModel || DEFAULTS.speechModel}`,
-    `Translation: ${isTranslationEnabled() ? args.chatModel || DEFAULTS.chatModel : 'off'}`, 
-    `Minute limit: ${args.maxTranscribePerMinute || DEFAULTS.maxTranscribePerMinute}`,
-    `Daily limit: ${args.maxTranscribePerDay || DEFAULTS.maxTranscribePerDay}`,
-    state.lastQuota ? `Quota min: ${state.lastQuota.usedThisMinute}/${args.maxTranscribePerMinute || DEFAULTS.maxTranscribePerMinute}` : 'Quota min: -',
-    state.lastQuota ? `Quota day: ${state.lastQuota.usedToday}/${args.maxTranscribePerDay || DEFAULTS.maxTranscribePerDay}` : 'Quota day: -',
-    '',
-    color('Shortcuts', 'bold'),
-    'Space pause/resume',
-    'M toggle microphone',
-    'B toggle system audio',
-    'L cycle Whisper language',
-    'R restart',
-    'S toggle panel',
-    'O toggle original',
-    'Q quit',
+    color(' Settings', 'bold'),
+    sep(),
+    group('LANGUAGES'),
+    kv('Source', formatWhisperLanguage(config.sourceLanguage)),
+    kv('Target', formatWhisperLanguage(config.targetLanguage)),
+    kv('Translate', `${translateState} ${color('(T to toggle)', 'dim')}`),
+    sep(),
+    group('SOURCES'),
+    kv('Microphone', sourceStateLabel('mic', config.listenMic)),
+    kv('System', sourceStateLabel('system', config.listenSystemAudio)),
+    kv('Active', state.activeSources.join('+') || color('-', 'dim')),
+    sep(),
+    group('CAPTURE'),
+    kv('Recording', state.running && !state.paused ? 'continuous' : state.paused ? 'paused' : 'off'),
+    kv('Elapsed', formatDuration(elapsed)),
+    kv('Status', state.paused ? 'paused' : state.running ? 'running' : 'off'),
+    kv('Groq req', formatCurrentRequests()),
+    kv('Queue', formatPendingQueues()),
+    sep(),
+    group('MODEL & LIMITS'),
+    kv('Speech', args.speechModel || DEFAULTS.speechModel),
+    kv('Chat model', isTranslationEnabled() ? args.chatModel || DEFAULTS.chatModel : color('-', 'dim')),
+    kv('Limits', `${args.maxTranscribePerMinute || DEFAULTS.maxTranscribePerMinute}/min · ${args.maxTranscribePerDay || DEFAULTS.maxTranscribePerDay}/day`),
+    kv('Quota', state.lastQuota ? `${state.lastQuota.usedThisMinute}/${args.maxTranscribePerMinute || DEFAULTS.maxTranscribePerMinute} · ${state.lastQuota.usedToday}/${args.maxTranscribePerDay || DEFAULTS.maxTranscribePerDay}` : color('-', 'dim')),
+    sep(),
+    group('TUNING'),
+    kv('Segment', `min ${args.minSegmentMs || DEFAULTS.minSegmentMs}ms`),
+    kv('Silence', `${args.silenceMs || DEFAULTS.silenceMs}ms`),
+    kv('Long sil.', `${args.longSegmentSilenceMs || DEFAULTS.longSegmentSilenceMs}ms`),
+    kv('Threshold', String(args.threshold || DEFAULTS.threshold)),
+    sep(),
+    group('SHORTCUTS'),
+    '  Space pause   M mic    B system',
+    '  L src lang    G target  T translate',
+    '  R restart     S panel   O original',
+    '  ↑↓ scroll     Q quit',
   ];
   while (rows.length < height) rows.push('');
   return rows.slice(0, height).map((row) => trim(row, width));
@@ -527,6 +540,25 @@ function cycleWhisperLanguage() {
 function formatWhisperLanguage(language) {
   const normalized = normalizeWhisperLanguage(language);
   return `${normalized} (${getWhisperLanguageName(normalized)})`;
+}
+
+function toggleTranslation() {
+  state.translateEnabled = !state.translateEnabled;
+  state.status = state.translateEnabled
+    ? `Translation on → ${formatWhisperLanguage(config.targetLanguage)}`
+    : 'Translation off';
+  requestRender();
+}
+
+function cycleTargetLanguage() {
+  const options = WHISPER_LANGUAGE_OPTIONS.filter(([code]) => code !== 'auto');
+  const current = String(config.targetLanguage || 'en').toLowerCase();
+  const index = options.findIndex(([code]) => code === current);
+  const next = options[(index + 1) % options.length][0];
+  config = { ...config, targetLanguage: next };
+  saveGlobalConfig({ targetLanguage: next });
+  state.status = `Target language: ${formatWhisperLanguage(next)}`;
+  requestRender();
 }
 
 async function toggleSource(source) {
@@ -650,7 +682,7 @@ function buildConfig(options) {
   const sourceSystem = ['system', 'system-audio', 'speaker', 'output'].includes(explicitSource) || options.systemAudio || options.system;
   return {
     sourceLanguage: normalizeWhisperLanguage(options.language || options.sourceLanguage || loadGlobalConfig().language || DEFAULTS.sourceLanguage),
-    targetLanguage: String(options.targetLanguage || options.targetLang || DEFAULTS.targetLanguage).toLowerCase(),
+    targetLanguage: String(options.targetLanguage || options.targetLang || loadGlobalConfig().targetLanguage || DEFAULTS.targetLanguage).toLowerCase(),
     listenMic: sourceSystem ? false : sourceMic ? true : !options.noMic,
     listenSystemAudio: sourceMic ? false : sourceSystem ? true : !options.noSystemAudio,
     autoSetupAudio: options.noAutoSetupAudio ? false : DEFAULTS.autoSetupAudio,
@@ -977,6 +1009,8 @@ function color(text, kind) {
     cyan: ['\x1b[36m', '\x1b[39m'],
     inverse: ['\x1b[7m', '\x1b[27m'],
     yellow: ['\x1b[33m', '\x1b[39m'],
+    magenta: ['\x1b[35m', '\x1b[39m'],
+    green: ['\x1b[32m', '\x1b[39m'],
   };
   const pair = codes[kind] || ['', ''];
   return `${pair[0]}${text}${pair[1]}`;

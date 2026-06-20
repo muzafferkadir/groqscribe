@@ -86,8 +86,15 @@ npm start -- --list-devices
 - `R` restart
 - `S` settings panel
 - `O` original text
+- `L` cycle source (Whisper) language
+- `G` cycle target language (used when translation is on)
+- `T` toggle chat translation (off by default)
 - `↑` / `↓` scroll transcript (PgUp/PgDn by 10); return to live with `↓`
 - `Q` quit
+
+Translation is off by default — toggle it at runtime with `T` (or start with
+`--translate`). The sidebar's LANGUAGES group shows the active source/target
+language and the translation state.
 
 The header shows a blinking red `●` next to each source (`MIC`/`SYS`) while it is
 actively capturing. On first run, if no API key is found, it prompts and saves
