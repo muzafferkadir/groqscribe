@@ -368,7 +368,10 @@ function render() {
   const height = process.stdout.rows || 30;
   const settingsWidth = state.showSettings ? Math.min(38, Math.floor(width * 0.38)) : 0;
   const mainWidth = width - settingsWidth - (settingsWidth ? 1 : 0);
-  const contentHeight = Math.max(5, height - 4);
+  // header(1) + footer(1) + output(1) = 3 reserved rows, so the content
+  // (transcript + sidebar) fills everything in between and footer/output
+  // sit on the very last two rows without overlapping the sidebar.
+  const contentHeight = Math.max(5, height - 3);
 
   const screen = [];
   const indicators = recordingIndicators();
