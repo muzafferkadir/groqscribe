@@ -18,16 +18,6 @@ curl -fsSL https://raw.githubusercontent.com/muzafferkadir/groqscribe/main/scrip
 
 Re-run the same command to update. It clones the repo, installs dependencies, builds the macOS system-audio helper, bundles the executable, and installs `groqscribe` into `~/.local/bin` (added to your `PATH`).
 
-### Uninstall
-
-```bash
-groqscribe --uninstall                 # prompts for confirmation
-groqscribe --uninstall -y              # no prompt
-groqscribe --uninstall --keep-config   # keep your saved API key
-```
-
-Or via curl: `curl -fsSL https://raw.githubusercontent.com/muzafferkadir/groqscribe/main/scripts/uninstall.sh | bash`
-
 ## Usage
 
 ```bash
@@ -116,6 +106,16 @@ Grant **Screen & System Audio Recording** permission to your terminal. If captur
 npm run setup-macos-audio          # installs BlackHole 2ch via Homebrew
 groqscribe --system-backend virtual
 ```
+
+### Uninstall
+
+```bash
+groqscribe --uninstall                 # prompts for confirmation
+groqscribe --uninstall -y              # no prompt
+groqscribe --uninstall --keep-config   # keep your saved API key
+```
+
+Or via curl: `curl -fsSL https://raw.githubusercontent.com/muzafferkadir/groqscribe/main/scripts/uninstall.sh | bash`
 
 ### Test
 
