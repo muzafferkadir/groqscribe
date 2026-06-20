@@ -292,7 +292,9 @@ async function processSegment(no, segment, source) {
   const item = { no, source, timestamp, text: translated || original, original };
   state.lines.push(item);
   if (state.lines.length > 300) state.lines.shift();
-  if (state.transcriptScroll > 0) state.transcriptScroll += 1;
+  // auto-follow: if the user was pinned to live (scroll 0), keep them there
+  // — the newest segment lands at the bottom and the view stays on it.
+  if (state.transcriptScroll > 0) state.transcriptScroll = Math.min(state.transcriptScroll + 1, state.lines.length - 1);
 
   appendTranscript(outputPath, item, state.showOriginal);
   state.status = `[${no}] Saved: ${basename(state.outputPath)}`;
@@ -373,6 +375,9 @@ function isCapturingLive() {
 
 function scrollTranscript(delta) {
   if (!state.lines.length) return;
+  // Word-style scrolling: transcript flows top→bottom with newest at the
+  // bottom. scroll 0 = pinned to the latest (live); positive = scrolled up
+  // into older history. ↑ goes older (+1), ↓ goes newer (-1).
   const max = Math.max(0, state.lines.length - 1);
   state.transcriptScroll = Math.max(0, Math.min(max, state.transcriptScroll + delta));
   requestRender();
@@ -410,29 +415,49 @@ function render() {
 }
 
 function buildTranscriptRows(width, height) {
-  const rows = [];
-  rows.push(color('─'.repeat(Math.max(1, width - 1)), 'dim'));
+  // Word-style: transcript flows top→bottom, newest at the bottom.
+  // scroll 0 = pinned to live (newest at bottom); scroll > 0 = scrolled up
+  // into older history. When scrolled back, a hint anchors the bottom edge.
+  const scrolledBack = state.transcriptScroll > 0 && state.lines.length;
 
-  if (state.transcriptScroll > 0 && state.lines.length) {
-    rows.push(color(`↑ older transcript (${state.transcriptScroll} back) — press ↓ to return to live`, 'yellow'));
-  }
+  const items = state.lines.slice(); // oldest → newest
+  const total = items.length;
+  const lastShown = Math.max(0, total - 1 - state.transcriptScroll);
 
-  if (state.error) rows.push(color(`Error: ${state.error}`, 'red'));
-  if (!state.lines.length) rows.push(color('No transcript yet. Detected speech/audio will appear here.', 'dim'));
-
-  const items = state.lines.slice().reverse();
-  const offset = Math.min(state.transcriptScroll, Math.max(0, items.length));
-  for (const item of items.slice(offset)) {
+  // Build per-segment row blocks (oldest→newest) so we never split a
+  // header line from its text when slicing the window.
+  const blocks = items.slice(0, lastShown + 1).map((item) => {
     const badge = item.source === 'mic' ? color('● MIC', 'cyan') : color('● SYS', 'magenta');
-    rows.push(`${color(`#${item.no}`, 'dim')} ${color(item.timestamp, 'dim')}  ${badge}`);
+    const rows = [`${color(`#${item.no}`, 'dim')} ${color(item.timestamp, 'dim')}  ${badge}`];
     rows.push(...wrap(item.text, width));
     if (state.showOriginal && item.original && item.original !== item.text) {
       rows.push(...wrap(`Original: ${item.original}`, width).map((line) => color(line, 'dim')));
     }
     rows.push('');
+    return rows;
+  });
+
+  const top = [color('─'.repeat(Math.max(1, width - 1)), 'dim')];
+  if (state.error) top.push(color(`Error: ${state.error}`, 'red'));
+  if (!total) top.push(color('No transcript yet. Detected speech/audio will appear here.', 'dim'));
+  const avail = Math.max(0, height - top.length - (scrolledBack ? 1 : 0));
+
+  // Keep the newest blocks whose total rows fit `avail`; older blocks scroll
+  // off the top whole (header stays with its text — like scrolling in Word).
+  const visibleBlocks = [];
+  let used = 0;
+  for (let i = blocks.length - 1; i >= 0 && used < avail; i -= 1) {
+    if (used + blocks[i].length > avail) break; // would overflow — stop here
+    visibleBlocks.unshift(blocks[i]);
+    used += blocks[i].length;
   }
 
-  while (rows.length < height) rows.push('');
+  const visible = visibleBlocks.flat();
+  const padded = [];
+  while (padded.length + visible.length < avail) padded.push('');
+
+  const rows = [...top, ...padded, ...visible];
+  if (scrolledBack) rows.push(color(`↑ older — ${state.transcriptScroll} back · press ↓ to return to live ↓`, 'yellow'));
   return rows.slice(0, height);
 }
 
