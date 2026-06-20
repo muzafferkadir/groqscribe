@@ -1028,5 +1028,44 @@ function formatDuration(seconds) {
 }
 
 function printHelp() {
-  console.log(`groqscribe\n\nStarts listening automatically, shows the live transcript in a terminal TUI, and writes transcription.txt in the current working directory.\nDefault output is the raw whisper-large-v3-turbo transcript; chat translation is disabled unless --translate is set.\n\nBy default only system audio is captured (microphone is off) to avoid double-capturing the same sound through both sources; enable the mic with --mic or press M at runtime.\n\nUsage:\n  ./dist/groqscribe                  # single-file executable\n  npm start                            # development mode\n  npm start -- --language auto         # Whisper source language; use auto or an ISO code like en/tr/de\n  npm start -- --mic                   # capture microphone instead of system audio\n  npm start -- --no-system-audio       # disable system audio capture (mic off too; press M to add mic)\n  npm start -- --translate             # enable chat translation\n  npm start -- --target-language en    # target language used with --translate; default en\n  npm start -- --reset-api-key         # ignore env/config and prompt for a new global API key\n  npm start -- --no-save-api-key       # do not save a prompted API key\n  npm start -- --long-segment-ms 20000 --long-segment-silence-ms 200\n\nAPI key precedence: --api-key, GROQ_API_KEY, ~/.meet-groq-tr/config.json, interactive prompt. With --reset-api-key, env/config are ignored and a new key is requested.\n\nShortcuts:\n  Space  pause/resume\n  M      toggle microphone\n  B      toggle system audio\n  L      cycle Whisper language\n  R      restart\n  S      toggle settings panel\n  O      toggle original text\n  Q      quit\n\nmacOS note:\n  System audio uses the ScreenCaptureKit helper first. Grant Screen & System Audio Recording permission to the terminal app when macOS asks. If that fails, use the virtual audio fallback with npm run setup-macos-audio or force it with --system-backend virtual.\n`);
+  console.log(`groqscribe
+
+Live microphone & system-audio transcription with Groq Whisper, shown in a terminal TUI. Writes transcription.txt in the current working directory.
+Default output is the raw whisper-large-v3-turbo transcript; chat translation is off unless --translate (or press T).
+
+By default only system audio is captured (microphone is off) to avoid double-capturing the same sound through both sources; enable the mic with --mic or press M at runtime.
+
+Usage:
+  groqscribe                          # default: system audio only
+  groqscribe --mic                    # capture microphone instead of system audio
+  groqscribe --no-system-audio        # disable system audio (press M to add mic)
+  groqscribe --language auto          # Whisper source language; auto or ISO code (en/tr/de...)
+  groqscribe --translate              # enable chat translation
+  groqscribe --target-language en     # target language used with --translate; default en
+  groqscribe --reset-api-key          # ignore env/config and prompt for a new global API key
+  groqscribe --no-save-api-key        # do not save a prompted API key
+  groqscribe --long-segment-ms 20000 --long-segment-silence-ms 200
+  groqscribe --list-devices           # list available audio devices
+  groqscribe --help                   # show this help
+
+Install:
+  curl -fsSL https://raw.githubusercontent.com/muzafferkadir/groqscribe/main/scripts/install.sh | bash
+
+Uninstall:
+  curl -fsSL https://raw.githubusercontent.com/muzafferkadir/groqscribe/main/scripts/uninstall.sh | bash
+  # add -y to skip the prompt; --keep-config preserves your saved API key
+
+API key precedence: --api-key, GROQ_API_KEY, ~/.meet-groq-tr/config.json, interactive prompt. Get a free key at https://console.groq.com/keys. With --reset-api-key, env/config are ignored and a new key is requested.
+
+Shortcuts (while running):
+  Space  pause/resume        L  cycle source language
+  M      toggle microphone   G  cycle target language
+  B      toggle system audio T  toggle translation
+  R      restart             S  toggle settings panel
+  O      toggle original     ↑↓ scroll transcript
+  Q      quit
+
+macOS note:
+  System audio uses the ScreenCaptureKit helper first. Grant Screen & System Audio Recording permission to the terminal app when macOS asks. If that fails, use the virtual audio fallback with npm run setup-macos-audio or force it with --system-backend virtual.
+`);
 }
