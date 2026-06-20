@@ -395,7 +395,6 @@ function render() {
 
 function buildTranscriptRows(width, height) {
   const rows = [];
-  rows.push(color('Transcription', 'bold'));
   rows.push(color('─'.repeat(Math.max(1, width - 1)), 'dim'));
 
   if (state.transcriptScroll > 0 && state.lines.length) {
