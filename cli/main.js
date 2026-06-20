@@ -2,7 +2,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import process from 'node:process';
@@ -49,9 +49,13 @@ if (args.listDevices) {
   listDevices();
   process.exit(0);
 }
+if (args.uninstall) {
+  await selfUninstall(args);
+  process.exit(0);
+}
 
 const apiKey = await resolveApiKey(args);
-const outputPath = resolve(process.cwd(), args.output || 'transcription.txt');
+const outputPath = resolve(process.cwd(), args.output || defaultTranscriptionFilename());
 let config = buildConfig(args);
 const state = {
   running: false,
@@ -291,7 +295,7 @@ async function processSegment(no, segment, source) {
   if (state.transcriptScroll > 0) state.transcriptScroll += 1;
 
   appendTranscript(outputPath, item, state.showOriginal);
-  state.status = `[${no}] Saved: transcription.txt`;
+  state.status = `[${no}] Saved: ${basename(state.outputPath)}`;
   requestRender();
 }
 
@@ -311,6 +315,18 @@ function appendTranscript(path, item, includeOriginal) {
   const block = [`[${item.timestamp}] [${item.source}] ${item.text}`];
   if (includeOriginal && item.original && item.original !== item.text) block.push(`Original: ${item.original}`);
   appendFileSync(path, `${block.join('\n')}\n\n`);
+}
+
+function defaultTranscriptionFilename() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  // transcription_ss_hh_DD_MM_YY.txt — second, minute, day, month, 2-digit year
+  const ss = pad(now.getSeconds());
+  const hh = pad(now.getMinutes());
+  const DD = pad(now.getDate());
+  const MM = pad(now.getMonth() + 1);
+  const YY = String(now.getFullYear()).slice(-2);
+  return `transcription_${ss}_${hh}_${DD}_${MM}_${YY}.txt`;
 }
 
 function setupTerminal() {
@@ -837,6 +853,64 @@ function pickMacMicrophoneDevice(devices) {
   return devices.find((device) => !/blackhole|loopback|vb-cable|soundflower|aggregate|multi-output/i.test(device.name)) || null;
 }
 
+async function selfUninstall(options) {
+  const binDir = process.env.GROQSCRIBE_BIN_DIR || join(homedir(), '.local/bin');
+  const installDir = process.env.GROQSCRIBE_DIR || join(homedir(), '.groqscribe');
+  const configDir = GLOBAL_CONFIG_DIR; // ~/.meet-groq-tr
+  const binPath = join(binDir, 'groqscribe');
+  const keepConfig = Boolean(options.keepConfig);
+
+  const targets = [];
+  if (existsSync(binPath)) targets.push(`  • binary:        ${binPath}`);
+  if (existsSync(installDir)) targets.push(`  • source clone:  ${installDir}`);
+  if (existsSync(configDir)) targets.push(`  • config:        ${configDir}${keepConfig ? '  (kept — --keep-config)' : '  (API key + usage stats)'}`);
+
+  console.log('\nUninstall plan:');
+  if (targets.length) console.log(targets.join('\n'));
+  else { console.log('\ngroqscribe is not installed — nothing to remove.'); return; }
+  console.log('  • PATH entry the installer added in your shell rc (if any)\n');
+
+  if (!options.yes && !options.y) {
+    const ans = await new Promise((resolve) => {
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      let done = false;
+      const finish = (a) => { if (done) return; done = true; try { rl.close(); } catch {} resolve((a || '').trim()); };
+      rl.question('Proceed with uninstall? [y/N] ', finish);
+      rl.on('close', () => finish(''));
+      process.stdin.on('end', () => finish(''));
+    });
+    if (!/^(y|yes)$/i.test(ans)) { console.log('Aborted.'); return; }
+  }
+
+  const rm = (p) => { try { spawnSync('rm', ['-rf', p]); } catch {} };
+
+  // stop any other running groqscribe (not this process)
+  try {
+    const out = spawnSync('pgrep', ['-f', binPath], { encoding: 'utf8' });
+    if (out.status === 0) {
+      const pids = out.stdout.split('\n').map((n) => Number(n)).filter((n) => n && n !== process.pid);
+      if (pids.length) { console.log('Stopping running groqscribe...'); pids.forEach((p) => { try { process.kill(p, 'SIGTERM'); } catch {} }); }
+    }
+  } catch {}
+
+  if (existsSync(binPath)) { rm(binPath); console.log(`✓ Removed binary: ${binPath}`); }
+  if (existsSync(installDir)) { rm(installDir); console.log(`✓ Removed source clone: ${installDir}`); }
+  if (keepConfig) { if (existsSync(configDir)) console.log(`▸ Kept config: ${configDir} (--keep-config)`); }
+  else if (existsSync(configDir)) { rm(configDir); console.log(`✓ Removed config: ${configDir} (API key + usage stats)`); }
+
+  // clean the '# Added by groqscribe installer' PATH block from shell rc files
+  const rcFiles = ['.zshrc', '.bashrc', '.profile'].map((f) => join(homedir(), f)).concat([join(homedir(), '.config/fish/config.fish')]);
+  for (const rc of rcFiles) {
+    if (!existsSync(rc)) continue;
+    let text = readFileSync(rc, 'utf8');
+    if (!text.includes('# Added by groqscribe installer') || !text.includes(binDir)) continue;
+    text = text.replace(/\n?# Added by groqscribe installer\n(?:export PATH[^\n]*|set -gx PATH[^\n]*)\n?/g, '');
+    try { writeFileSync(rc, text); console.log(`✓ Cleaned PATH entry from ${rc}`); } catch {}
+  }
+
+  console.log('\ngroqscribe has been uninstalled.\n  Reinstall any time with:\n    curl -fsSL https://raw.githubusercontent.com/muzafferkadir/groqscribe/main/scripts/install.sh | bash\n');
+}
+
 async function resolveApiKey(options) {
   if (options.resetApiKey) saveGlobalConfig({ apiKey: '' });
 
@@ -950,10 +1024,12 @@ function parseArgs(argv) {
   const parsed = {};
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (!arg.startsWith('--')) continue;
-    const key = toCamel(arg.slice(2));
+    let key = null;
+    if (arg.startsWith('--')) key = toCamel(arg.slice(2));
+    else if (arg.startsWith('-') && arg.length === 2) key = toCamel(arg.slice(1)); // short flags like -y
+    if (!key) continue;
     const next = argv[index + 1];
-    if (!next || next.startsWith('--')) parsed[key] = true;
+    if (!next || next.startsWith('-')) parsed[key] = true;
     else { parsed[key] = next; index += 1; }
   }
   return parsed;
@@ -1030,7 +1106,7 @@ function formatDuration(seconds) {
 function printHelp() {
   console.log(`groqscribe
 
-Live microphone & system-audio transcription with Groq Whisper, shown in a terminal TUI. Writes transcription.txt in the current working directory.
+Live microphone & system-audio transcription with Groq Whisper, shown in a terminal TUI. Writes transcription_<ss>_<hh>_<DD>_<MM>_<YY>.txt in the current working directory (one file per run, so they never overwrite each other).
 Default output is the raw whisper-large-v3-turbo transcript; chat translation is off unless --translate (or press T).
 
 By default only system audio is captured (microphone is off) to avoid double-capturing the same sound through both sources; enable the mic with --mic or press M at runtime.
@@ -1046,14 +1122,18 @@ Usage:
   groqscribe --no-save-api-key        # do not save a prompted API key
   groqscribe --long-segment-ms 20000 --long-segment-silence-ms 200
   groqscribe --list-devices           # list available audio devices
+  groqscribe --uninstall              # remove groqscribe and its config
   groqscribe --help                   # show this help
 
 Install:
   curl -fsSL https://raw.githubusercontent.com/muzafferkadir/groqscribe/main/scripts/install.sh | bash
 
 Uninstall:
+  groqscribe --uninstall                    # interactive prompt
+  groqscribe --uninstall -y                 # skip the confirmation
+  groqscribe --uninstall --keep-config      # keep your saved API key
+  # or via curl:
   curl -fsSL https://raw.githubusercontent.com/muzafferkadir/groqscribe/main/scripts/uninstall.sh | bash
-  # add -y to skip the prompt; --keep-config preserves your saved API key
 
 API key precedence: --api-key, GROQ_API_KEY, ~/.meet-groq-tr/config.json, interactive prompt. Get a free key at https://console.groq.com/keys. With --reset-api-key, env/config are ignored and a new key is requested.
 
