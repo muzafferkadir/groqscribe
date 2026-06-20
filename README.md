@@ -67,12 +67,16 @@ npm start
 
 On first run, if no API key is found, it prompts and saves it to `~/.meet-groq-tr/config.json` (get one at https://console.groq.com/keys).
 
+By default **only system audio** is captured (microphone is off) to avoid
+double-capturing the same sound through both sources. Enable the mic with
+`--mic` or press `M` at runtime; toggle system audio with `B`.
+
 ## Examples
 
 ```bash
 npm start -- --language en
-npm start -- --no-mic
-npm start -- --no-system-audio
+npm start -- --mic                  # capture microphone instead of system audio
+npm start -- --no-system-audio      # disable system audio (press M to add mic)
 npm start -- --translate --target-language en
 npm start -- --list-devices
 ```

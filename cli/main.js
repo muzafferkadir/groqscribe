@@ -35,7 +35,7 @@ const DEFAULTS = {
   targetLanguage: 'en',
   maxTranscribePerMinute: 18,
   maxTranscribePerDay: 1900,
-  listenMic: true,
+  listenMic: false,
   listenSystemAudio: true,
   autoSetupAudio: true,
 };
@@ -685,7 +685,10 @@ function buildConfig(options) {
   return {
     sourceLanguage: normalizeWhisperLanguage(options.language || options.sourceLanguage || loadGlobalConfig().language || DEFAULTS.sourceLanguage),
     targetLanguage: String(options.targetLanguage || options.targetLang || loadGlobalConfig().targetLanguage || DEFAULTS.targetLanguage).toLowerCase(),
-    listenMic: sourceSystem ? false : sourceMic ? true : !options.noMic,
+    // Default: system audio only (mic off). Explicit source flags pick one source;
+    // --no-mic/--no-system-audio toggle off the respective source. To start with
+    // the mic instead, use --mic / --source mic (or press M at runtime).
+    listenMic: sourceSystem ? false : sourceMic ? true : !options.noMic && (options.mic || options.microphone || options.ambient),
     listenSystemAudio: sourceMic ? false : sourceSystem ? true : !options.noSystemAudio,
     autoSetupAudio: options.noAutoSetupAudio ? false : DEFAULTS.autoSetupAudio,
   };
@@ -1025,5 +1028,5 @@ function formatDuration(seconds) {
 }
 
 function printHelp() {
-  console.log(`groqscribe\n\nStarts listening automatically, shows the live transcript in a terminal TUI, and writes transcription.txt in the current working directory.\nDefault output is the raw whisper-large-v3-turbo transcript; chat translation is disabled unless --translate is set.\n\nUsage:\n  ./dist/groqscribe                  # single-file executable\n  npm start                            # development mode\n  npm start -- --language auto         # Whisper source language; use auto or an ISO code like en/tr/de\n  npm start -- --translate             # enable chat translation\n  npm start -- --target-language en    # target language used with --translate; default en\n  npm start -- --no-mic                # disable microphone capture\n  npm start -- --no-system-audio       # disable system audio capture\n  npm start -- --reset-api-key         # ignore env/config and prompt for a new global API key\n  npm start -- --no-save-api-key       # do not save a prompted API key\n  npm start -- --long-segment-ms 20000 --long-segment-silence-ms 200\n\nAPI key precedence: --api-key, GROQ_API_KEY, ~/.meet-groq-tr/config.json, interactive prompt. With --reset-api-key, env/config are ignored and a new key is requested.\n\nShortcuts:\n  Space  pause/resume\n  M      toggle microphone\n  B      toggle system audio\n  L      cycle Whisper language\n  R      restart\n  S      toggle settings panel\n  O      toggle original text\n  Q      quit\n\nmacOS note:\n  System audio uses the ScreenCaptureKit helper first. Grant Screen & System Audio Recording permission to the terminal app when macOS asks. If that fails, use the virtual audio fallback with npm run setup-macos-audio or force it with --system-backend virtual.\n`);
+  console.log(`groqscribe\n\nStarts listening automatically, shows the live transcript in a terminal TUI, and writes transcription.txt in the current working directory.\nDefault output is the raw whisper-large-v3-turbo transcript; chat translation is disabled unless --translate is set.\n\nBy default only system audio is captured (microphone is off) to avoid double-capturing the same sound through both sources; enable the mic with --mic or press M at runtime.\n\nUsage:\n  ./dist/groqscribe                  # single-file executable\n  npm start                            # development mode\n  npm start -- --language auto         # Whisper source language; use auto or an ISO code like en/tr/de\n  npm start -- --mic                   # capture microphone instead of system audio\n  npm start -- --no-system-audio       # disable system audio capture (mic off too; press M to add mic)\n  npm start -- --translate             # enable chat translation\n  npm start -- --target-language en    # target language used with --translate; default en\n  npm start -- --reset-api-key         # ignore env/config and prompt for a new global API key\n  npm start -- --no-save-api-key       # do not save a prompted API key\n  npm start -- --long-segment-ms 20000 --long-segment-silence-ms 200\n\nAPI key precedence: --api-key, GROQ_API_KEY, ~/.meet-groq-tr/config.json, interactive prompt. With --reset-api-key, env/config are ignored and a new key is requested.\n\nShortcuts:\n  Space  pause/resume\n  M      toggle microphone\n  B      toggle system audio\n  L      cycle Whisper language\n  R      restart\n  S      toggle settings panel\n  O      toggle original text\n  Q      quit\n\nmacOS note:\n  System audio uses the ScreenCaptureKit helper first. Grant Screen & System Audio Recording permission to the terminal app when macOS asks. If that fails, use the virtual audio fallback with npm run setup-macos-audio or force it with --system-backend virtual.\n`);
 }
