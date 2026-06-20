@@ -481,7 +481,7 @@ function buildSettingsRows(width, height) {
   const kv = (label, value) => `  ${color(label.padEnd(11), 'dim')}${value}`;
   const translateState = isTranslationEnabled() ? color('on', 'green') : color('off', 'dim');
 
-  const rows = [
+  let rows = [
     color(' Settings', 'bold'),
     sep(),
     group('LANGUAGES'),
@@ -518,7 +518,26 @@ function buildSettingsRows(width, height) {
     '  L src lang    G target  T translate',
     '  R restart     S panel   O original',
     '  ↑↓ scroll     Q quit',
+    sep(),
   ];
+  // Fit into the panel. Keep SHORTCUTS + closing border + a bottom pad
+  // always visible; if the upper content overflows, drop the least-critical
+  // groups first (TUNING, then MODEL & LIMITS detail rows).
+  const shortcutsIdx = rows.findIndex((r) => stripAnsi(r).startsWith('SHORTCUTS'));
+  const shortcutsBlock = shortcutsIdx >= 0 ? rows.slice(shortcutsIdx) : [];
+  let upper = shortcutsIdx >= 0 ? rows.slice(0, shortcutsIdx) : rows;
+  const dropGroup = (name) => {
+    const from = upper.findIndex((r) => stripAnsi(r).startsWith(name));
+    if (from < 0) return false;
+    const to = upper.findIndex((r, i) => i > from && /─────/.test(stripAnsi(r)));
+    if (to < 0) return false;
+    upper = upper.slice(0, from).concat(upper.slice(to + 1));
+    return true;
+  };
+  while (upper.length + shortcutsBlock.length > height && dropGroup('TUNING')) {}
+  while (upper.length + shortcutsBlock.length > height && dropGroup('MODEL & LIMITS')) {}
+  rows = upper.concat(shortcutsBlock);
+  if (rows.length > height) rows = rows.slice(0, height);
   while (rows.length < height) rows.push('');
   return rows.slice(0, height).map((row) => trim(row, width));
 }
