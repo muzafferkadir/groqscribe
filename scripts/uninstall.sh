@@ -19,7 +19,8 @@ set -euo pipefail
 INSTALL_DIR="${GROQSCRIBE_DIR:-$HOME/.groqscribe}"
 BIN_DIR="${GROQSCRIBE_BIN_DIR:-$HOME/.local/bin}"
 BIN_NAME="groqscribe"
-CONFIG_DIR="$HOME/.meet-groq-tr"   # API key + usage stats live here
+CONFIG_DIR="$HOME/.config/groqscribe"   # API key + usage stats live here
+LEGACY_CONFIG_DIR="$HOME/.meet-groq-tr"  # old location, removed if present
 
 # ---- pretty output (only when stdout is a TTY) ----
 if [[ -t 1 ]]; then
@@ -42,7 +43,7 @@ Usage:
 
 Flags:
   -y, --yes          skip the confirmation prompt
-  --keep-config      keep ~/.meet-groq-tr (saved API key + usage stats)
+  --keep-config      keep ~/.config/groqscribe (saved API key + usage stats)
   -h, --help         show this help
 
 Environment overrides (match the installer):
@@ -79,12 +80,13 @@ if [[ "$KEEP_CONFIG" -eq 1 ]]; then
   [[ -d "$CONFIG_DIR" ]] && printf '  • config:        %s  (kept — --keep-config)\n' "$CONFIG_DIR"
 else
   [[ -d "$CONFIG_DIR" ]] && printf '  • config:        %s  (API key + usage stats)\n' "$CONFIG_DIR"
+  [[ -d "$LEGACY_CONFIG_DIR" ]] && printf '  • legacy config: %s  (old location)\n' "$LEGACY_CONFIG_DIR"
 fi
 printf '  • PATH entry the installer added in your shell rc (if any)\n'
 echo
 
 # nothing to do?
-if [[ ! -x "$BIN_DIR/$BIN_NAME" && ! -d "$INSTALL_DIR" && ! -d "$CONFIG_DIR" ]]; then
+if [[ ! -x "$BIN_DIR/$BIN_NAME" && ! -d "$INSTALL_DIR" && ! -d "$CONFIG_DIR" && ! -d "$LEGACY_CONFIG_DIR" ]]; then
   ok "groqscribe is not installed — nothing to remove."
   exit 0
 fi
@@ -117,12 +119,17 @@ if [[ -d "$INSTALL_DIR" ]]; then
 fi
 
 # ---- remove config (API key + usage stats), unless --keep-config ----
+# Also remove the legacy ~/.meet-groq-tr if it lingers.
 if [[ "$KEEP_CONFIG" -eq 1 ]]; then
   [[ -d "$CONFIG_DIR" ]] && info "Kept config: $CONFIG_DIR (--keep-config)"
 else
   if [[ -d "$CONFIG_DIR" ]]; then
     rm -rf "$CONFIG_DIR"
     ok "Removed config: $CONFIG_DIR (API key + usage stats)"
+  fi
+  if [[ -d "$LEGACY_CONFIG_DIR" ]]; then
+    rm -rf "$LEGACY_CONFIG_DIR"
+    ok "Removed legacy config: $LEGACY_CONFIG_DIR"
   fi
 fi
 

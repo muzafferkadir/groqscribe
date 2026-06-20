@@ -42,7 +42,7 @@ By default only **system audio** is captured; the microphone is off so the same 
 
 Get a free key at **https://console.groq.com/keys**.
 
-On first run, `groqscribe` prompts for it and saves it to `~/.meet-groq-tr/config.json`. Or set it before running:
+On first run, `groqscribe` prompts for it and saves it to `~/.config/groqscribe/config.json`. Or set it before running:
 
 ```bash
 export GROQ_API_KEY="gsk_..."

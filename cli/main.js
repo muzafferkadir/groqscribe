@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
@@ -13,8 +13,19 @@ import { RequestRateLimiter, normalizeUsage } from '../src/rateLimiter.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '..');
-const GLOBAL_CONFIG_DIR = join(homedir(), '.meet-groq-tr');
+const LEGACY_CONFIG_DIR = join(homedir(), '.meet-groq-tr');
+const GLOBAL_CONFIG_DIR = join(homedir(), '.config', 'groqscribe');
 const GLOBAL_CONFIG_FILE = join(GLOBAL_CONFIG_DIR, 'config.json');
+// one-time migration of the old .meet-groq-tr config dir
+if (!existsSync(GLOBAL_CONFIG_FILE) && existsSync(join(LEGACY_CONFIG_DIR, 'config.json'))) {
+  mkdirSync(GLOBAL_CONFIG_DIR, { recursive: true });
+  try {
+    for (const name of readdirSync(LEGACY_CONFIG_DIR)) {
+      renameSync(join(LEGACY_CONFIG_DIR, name), join(GLOBAL_CONFIG_DIR, name));
+    }
+    try { rmdirSync(LEGACY_CONFIG_DIR); } catch {}
+  } catch {}
+}
 const BUNDLED_SYSTEM_AUDIO_HELPER_BASE64 = typeof __SYSTEM_AUDIO_HELPER_BASE64__ === 'string' ? __SYSTEM_AUDIO_HELPER_BASE64__ : '';
 const BUNDLED_SYSTEM_AUDIO_HELPER_PLATFORM = typeof __SYSTEM_AUDIO_HELPER_PLATFORM__ === 'string' ? __SYSTEM_AUDIO_HELPER_PLATFORM__ : '';
 const BUNDLED_SYSTEM_AUDIO_HELPER_ARCH = typeof __SYSTEM_AUDIO_HELPER_ARCH__ === 'string' ? __SYSTEM_AUDIO_HELPER_ARCH__ : '';
@@ -900,7 +911,8 @@ function pickMacMicrophoneDevice(devices) {
 async function selfUninstall(options) {
   const binDir = process.env.GROQSCRIBE_BIN_DIR || join(homedir(), '.local/bin');
   const installDir = process.env.GROQSCRIBE_DIR || join(homedir(), '.groqscribe');
-  const configDir = GLOBAL_CONFIG_DIR; // ~/.meet-groq-tr
+  const configDir = GLOBAL_CONFIG_DIR; // ~/.config/groqscribe
+  const legacyConfigDir = LEGACY_CONFIG_DIR; // ~/.meet-groq-tr (old)
   const binPath = join(binDir, 'groqscribe');
   const keepConfig = Boolean(options.keepConfig);
 
@@ -908,6 +920,7 @@ async function selfUninstall(options) {
   if (existsSync(binPath)) targets.push(`  • binary:        ${binPath}`);
   if (existsSync(installDir)) targets.push(`  • source clone:  ${installDir}`);
   if (existsSync(configDir)) targets.push(`  • config:        ${configDir}${keepConfig ? '  (kept — --keep-config)' : '  (API key + usage stats)'}`);
+  if (existsSync(legacyConfigDir)) targets.push(`  • legacy config: ${legacyConfigDir}  (old location)`);
 
   console.log('\nUninstall plan:');
   if (targets.length) console.log(targets.join('\n'));
@@ -941,6 +954,8 @@ async function selfUninstall(options) {
   if (existsSync(installDir)) { rm(installDir); console.log(`✓ Removed source clone: ${installDir}`); }
   if (keepConfig) { if (existsSync(configDir)) console.log(`▸ Kept config: ${configDir} (--keep-config)`); }
   else if (existsSync(configDir)) { rm(configDir); console.log(`✓ Removed config: ${configDir} (API key + usage stats)`); }
+  // always clean the legacy dir regardless of --keep-config (it's the old name)
+  if (existsSync(legacyConfigDir)) { rm(legacyConfigDir); console.log(`✓ Removed legacy config: ${legacyConfigDir}`); }
 
   // clean the '# Added by groqscribe installer' PATH block from shell rc files
   const rcFiles = ['.zshrc', '.bashrc', '.profile'].map((f) => join(homedir(), f)).concat([join(homedir(), '.config/fish/config.fish')]);
@@ -1179,7 +1194,7 @@ Uninstall:
   # or via curl:
   curl -fsSL https://raw.githubusercontent.com/muzafferkadir/groqscribe/main/scripts/uninstall.sh | bash
 
-API key precedence: --api-key, GROQ_API_KEY, ~/.meet-groq-tr/config.json, interactive prompt. Get a free key at https://console.groq.com/keys. With --reset-api-key, env/config are ignored and a new key is requested.
+API key precedence: --api-key, GROQ_API_KEY, ~/.config/groqscribe/config.json, interactive prompt. Get a free key at https://console.groq.com/keys. With --reset-api-key, env/config are ignored and a new key is requested.
 
 Shortcuts (while running):
   Space  pause/resume        L  cycle source language
