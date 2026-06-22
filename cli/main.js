@@ -145,7 +145,7 @@ async function startCaptures() {
   state.paused = false;
   state.status = started.length
     ? `Listening: ${started.join(' + ')}`
-    : 'No audio source could be started';
+    : 'No audio source could be started — press M for mic, or grant Screen & System Audio Recording permission';
   log(`Output file: ${outputPath}`);
   requestRender();
 }
@@ -176,8 +176,14 @@ async function startOneCapture(source) {
 
   ffmpeg.stderr.on('data', (chunk) => {
     const text = chunk.toString().trim();
-    if (/error|not found|permission|denied|invalid/i.test(text)) {
-      state.error = `[${source}] ${text.split('\n').slice(-2).join(' ')}`;
+    if (!text) return;
+    if (/error|not found|permission|denied|invalid|tcc|declined/i.test(text)) {
+      const tail = text.split('\n').slice(-2).join(' ');
+      if (source === 'system' && /declined tcc|tcc|permission|not authorized/i.test(tail)) {
+        state.error = '[system] Screen & System Audio Recording permission denied. Grant it to your terminal in System Settings → Privacy & Security, then press R. Or press M for mic, or run: groqscribe --system-backend virtual';
+      } else {
+        state.error = `[${source}] ${tail}`;
+      }
       log(state.error);
       requestRender();
     }
@@ -190,7 +196,17 @@ async function startOneCapture(source) {
     captures.delete(source);
     state.activeSources = [...captures.keys()];
     state.running = captures.size > 0;
-    state.status = `${source} exited: code=${code ?? '-'} signal=${signal ?? '-'}`;
+    if (source === 'system' && code === 1) {
+      state.status = 'System audio permission denied — M:mic · R:retry · or grant Screen & System Audio Recording';
+    } else {
+      state.status = `${source} exited: code=${code ?? '-'} signal=${signal ?? '-'}`;
+    }
+    // No source left — keep the TUI alive and guide the user instead of
+    // silently sitting on an empty "No transcript yet" screen.
+    if (!state.running && captures.size === 0) {
+      state.paused = false;
+      if (!state.error) state.error = 'No audio source is active. Press M to enable the microphone, or R to restart.';
+    }
     requestRender();
   });
 
