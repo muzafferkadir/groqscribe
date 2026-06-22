@@ -47,6 +47,9 @@ Precedence: `--api-key` → `GROQ_API_KEY` → saved config → interactive prom
 | `Space` | pause / resume |
 | `M` | toggle microphone |
 | `B` | toggle system audio |
+| `D` | switch microphone device (cycle available mics) |
+| `N` | cycle source mode (system → mic → both) |
+| `A` | open System Settings → Privacy (Screen Recording / Microphone) |
 | `T` | toggle translation (off by default) |
 | `L` | cycle source (Whisper) language |
 | `G` | cycle target language |
@@ -64,6 +67,7 @@ A blinking red `●` appears next to each active source (`MIC`/`SYS`) in the hea
 |--------|-------------|
 | `--mic` | capture microphone instead of system audio |
 | `--no-system-audio` | disable system audio (press `M` to add mic) |
+| `--device <name>` | start with a specific microphone device (press `D` at runtime to cycle) |
 | `--language <code>` | Whisper source language; `auto` or ISO code (`en`, `tr`, `de`…) |
 | `--translate` | enable chat translation |
 | `--target-language <code>` | target language for translation (default `en`) |

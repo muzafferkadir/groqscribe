@@ -88,6 +88,9 @@ const state = {
   activeSources: [],
   transcriptScroll: 0,
   translateEnabled: Boolean(args.translate) && !args.noTranslate,
+  micDevices: [],
+  micDeviceIndex: 0,
+  lastAccessError: '',
 };
 
 const captures = new Map();
@@ -121,6 +124,7 @@ if (!apiKey) {
 
 async function startCaptures() {
   if (state.running) return;
+  refreshMicDevices();
   state.error = '';
   state.status = 'Preparing audio sources...';
   requestRender();
@@ -177,10 +181,14 @@ async function startOneCapture(source) {
   ffmpeg.stderr.on('data', (chunk) => {
     const text = chunk.toString().trim();
     if (!text) return;
-    if (/error|not found|permission|denied|invalid|tcc|declined/i.test(text)) {
+    if (/error|not found|permission|denied|invalid|tcc|declined|could not open|no such/i.test(text)) {
       const tail = text.split('\n').slice(-2).join(' ');
       if (source === 'system' && /declined tcc|tcc|permission|not authorized/i.test(tail)) {
-        state.error = '[system] Screen & System Audio Recording permission denied. Grant it to your terminal in System Settings → Privacy & Security, then press R. Or press M for mic, or run: groqscribe --system-backend virtual';
+        state.error = '[system] Screen & System Audio Recording permission denied. Press A to open System Settings, R to retry. Or M for mic, or: groqscribe --system-backend virtual';
+        state.lastAccessError = 'screen';
+      } else if (source === 'mic' && /permission|denied|not authorized|could not open input|no such/i.test(tail)) {
+        state.error = '[mic] Microphone permission denied or device unavailable. Press A to open System Settings, R to retry, D to switch mic device.';
+        state.lastAccessError = 'microphone';
       } else {
         state.error = `[${source}] ${tail}`;
       }
@@ -197,7 +205,11 @@ async function startOneCapture(source) {
     state.activeSources = [...captures.keys()];
     state.running = captures.size > 0;
     if (source === 'system' && code === 1) {
-      state.status = 'System audio permission denied — M:mic · R:retry · or grant Screen & System Audio Recording';
+      state.status = 'System audio permission denied — A:settings · R:retry · M:mic';
+      state.lastAccessError = 'screen';
+    } else if (source === 'mic' && code !== 0 && code != null) {
+      state.status = 'Mic could not open — A:settings · R:retry · D:switch device';
+      state.lastAccessError = 'microphone';
     } else {
       state.status = `${source} exited: code=${code ?? '-'} signal=${signal ?? '-'}`;
     }
@@ -205,7 +217,7 @@ async function startOneCapture(source) {
     // silently sitting on an empty "No transcript yet" screen.
     if (!state.running && captures.size === 0) {
       state.paused = false;
-      if (!state.error) state.error = 'No audio source is active. Press M to enable the microphone, or R to restart.';
+      if (!state.error) state.error = 'No audio source is active. Press M for mic, D to switch mic device, N for source mode, or R to retry.';
     }
     requestRender();
   });
@@ -378,6 +390,9 @@ function setupTerminal() {
     if (key?.name === 'pagedown') return scrollTranscript(-10);
     if (key?.name === 't') return toggleTranslation();
     if (key?.name === 'g') return cycleTargetLanguage();
+    if (key?.name === 'd') return cycleMicDevice();
+    if (key?.name === 'n') return cycleSourceMode();
+    if (key?.name === 'a') return openAccessSettings();
   });
 
   process.on('SIGINT', shutdown);
@@ -435,7 +450,7 @@ function render() {
     else screen.push(left);
   }
 
-  const footer = ' Space:pause  M:mic  B:system  L:src lang  G:target  T:translate  R:restart  S:panel  O:original  ↑↓:scroll  Q:quit ';
+  const footer = ' Space:pause  M:mic  B:sys  D:micdev  N:src  L:lang  G:target  T:translate  R:retry  A:access  S:panel  O:orig  ↑↓:scroll  Q:quit ';
   screen.push(color(trim(footer, width), 'inverse'));
   screen.push(color(trim(` Output: ${state.outputPath}`, width), 'dim'));
   process.stdout.write('\x1b[H\x1b[2J' + screen.join('\n'));
@@ -543,6 +558,7 @@ function buildSettingsRows(width, height) {
     sep(),
     group('SOURCES'),
     kv('Microphone', sourceStateLabel('mic', config.listenMic)),
+    kv('Mic dev', config.micDeviceName || state.micDevices[state.micDeviceIndex]?.name || '-'),
     kv('System', sourceStateLabel('system', config.listenSystemAudio)),
     kv('Active', state.activeSources.join('+') || color('-', 'dim')),
     sep(),
@@ -567,6 +583,7 @@ function buildSettingsRows(width, height) {
     sep(),
     group('SHORTCUTS'),
     '  Space pause   M mic    B system',
+    '  D mic device  N source  A access',
     '  L src lang    G target  T translate',
     '  R restart     S panel   O original',
     '  ↑↓ scroll     Q quit',
@@ -709,6 +726,118 @@ async function restartCaptures() {
   requestRender();
 }
 
+function refreshMicDevices() {
+  if (process.platform !== 'darwin') return;
+  const all = getMacAudioDevices();
+  state.micDevices = all.filter((device) => !/blackhole|loopback|vb-cable|soundflower|aggregate|multi-output/i.test(device.name));
+  if (state.micDeviceIndex >= state.micDevices.length) state.micDeviceIndex = 0;
+  if (config.micDeviceName) {
+    const idx = state.micDevices.findIndex((device) => device.name === config.micDeviceName);
+    state.micDeviceIndex = idx >= 0 ? idx : 0;
+  } else if (state.micDevices.length) {
+    config = { ...config, micDeviceName: state.micDevices[0].name };
+  }
+}
+
+async function cycleMicDevice() {
+  if (process.platform !== 'darwin') {
+    state.status = 'Mic device switching is macOS-only';
+    requestRender();
+    return;
+  }
+  if (!state.micDevices.length) refreshMicDevices();
+  const devices = state.micDevices;
+  if (!devices.length) {
+    state.status = 'No microphone devices found';
+    requestRender();
+    return;
+  }
+  if (devices.length < 2) {
+    state.status = `Only one microphone: ${devices[0].name}`;
+    requestRender();
+    return;
+  }
+  state.micDeviceIndex = (state.micDeviceIndex + 1) % devices.length;
+  const next = devices[state.micDeviceIndex];
+  config = { ...config, micDeviceName: next.name };
+  saveGlobalConfig({ micDevice: next.name });
+  state.status = `Mic device → ${next.name}${captures.has('mic') ? ' (restarting)' : ''}`;
+  requestRender();
+  if (captures.has('mic')) {
+    await stopOneCapture('mic');
+    try {
+      const capture = await startOneCapture('mic');
+      captures.set('mic', capture);
+      state.activeSources = [...captures.keys()];
+      state.running = captures.size > 0;
+    } catch (error) {
+      state.error = error.message;
+      state.lastAccessError = 'microphone';
+    }
+    requestRender();
+  }
+}
+
+async function cycleSourceMode() {
+  const sys = config.listenSystemAudio;
+  const mic = config.listenMic;
+  let nextSys;
+  let nextMic;
+  let label;
+  if (sys && !mic) { nextSys = false; nextMic = true; label = 'Microphone only'; }
+  else if (!sys && mic) { nextSys = true; nextMic = true; label = 'Microphone + System'; }
+  else if (sys && mic) { nextSys = true; nextMic = false; label = 'System only'; }
+  else { nextSys = true; nextMic = false; label = 'System only'; }
+  config = { ...config, listenMic: nextMic, listenSystemAudio: nextSys };
+  state.status = `Source mode → ${label}`;
+  requestRender();
+  await applySourceConfig();
+}
+
+async function applySourceConfig() {
+  const desired = resolveSources(config);
+  for (const source of ['mic', 'system']) {
+    if (!desired.includes(source) && captures.has(source)) await stopOneCapture(source);
+  }
+  if (!apiKey) {
+    state.error = 'GROQ_API_KEY is missing; source could not start.';
+    requestRender();
+    return;
+  }
+  for (const source of desired) {
+    if (captures.has(source)) continue;
+    try {
+      const capture = await startOneCapture(source);
+      captures.set(source, capture);
+    } catch (error) {
+      state.error = `${source} could not start: ${error.message}`;
+      state.lastAccessError = source === 'system' ? 'screen' : 'microphone';
+    }
+  }
+  state.activeSources = [...captures.keys()];
+  state.running = captures.size > 0;
+  state.paused = false;
+  requestRender();
+}
+
+function openAccessSettings() {
+  if (process.platform !== 'darwin') {
+    state.status = 'System Settings shortcut is macOS-only';
+    requestRender();
+    return;
+  }
+  const kind = state.lastAccessError === 'microphone' ? 'microphone' : 'screen';
+  const pane = kind === 'microphone' ? 'Privacy_Microphone' : 'Privacy_ScreenCapture';
+  const label = kind === 'microphone' ? 'Microphone' : 'Screen & System Audio Recording';
+  try {
+    spawnSync('open', [`x-apple.systempreferences:com.apple.preference.security?${pane}`]);
+    state.status = `Opened System Settings → ${label}. Enable your terminal, then press R to retry.`;
+  } catch (error) {
+    state.status = `Could not open System Settings: ${error.message}`;
+  }
+  requestRender();
+}
+
 async function shutdown() {
   if (state.stopping) return;
   state.stopping = true;
@@ -766,18 +895,20 @@ function buildCapturePlan(options, defaults, source) {
 }
 
 function buildConfig(options) {
+  const saved = loadGlobalConfig();
   const explicitSource = String(options.source || '').toLowerCase();
   const sourceMic = ['mic', 'microphone', 'ambient'].includes(explicitSource) || options.mic || options.microphone || options.ambient;
   const sourceSystem = ['system', 'system-audio', 'speaker', 'output'].includes(explicitSource) || options.systemAudio || options.system;
   return {
-    sourceLanguage: normalizeWhisperLanguage(options.language || options.sourceLanguage || loadGlobalConfig().language || DEFAULTS.sourceLanguage),
-    targetLanguage: String(options.targetLanguage || options.targetLang || loadGlobalConfig().targetLanguage || DEFAULTS.targetLanguage).toLowerCase(),
+    sourceLanguage: normalizeWhisperLanguage(options.language || options.sourceLanguage || saved.language || DEFAULTS.sourceLanguage),
+    targetLanguage: String(options.targetLanguage || options.targetLang || saved.targetLanguage || DEFAULTS.targetLanguage).toLowerCase(),
     // Default: system audio only (mic off). Explicit source flags pick one source;
     // --no-mic/--no-system-audio toggle off the respective source. To start with
     // the mic instead, use --mic / --source mic (or press M at runtime).
     listenMic: sourceSystem ? false : sourceMic ? true : !options.noMic && (options.mic || options.microphone || options.ambient),
     listenSystemAudio: sourceMic ? false : sourceSystem ? true : !options.noSystemAudio,
     autoSetupAudio: options.noAutoSetupAudio ? false : DEFAULTS.autoSetupAudio,
+    micDeviceName: saved.micDevice || options.device || '',
   };
 }
 
@@ -836,6 +967,7 @@ function extractBundledSystemAudioHelper() {
 }
 
 function resolveMacAudioDevice(source, explicitDevice) {
+  if (source === 'mic' && config.micDeviceName) return config.micDeviceName;
   if (explicitDevice) return explicitDevice;
   const devices = getMacAudioDevices();
   if (source === 'system') {
@@ -1216,7 +1348,9 @@ Shortcuts (while running):
   Space  pause/resume        L  cycle source language
   M      toggle microphone   G  cycle target language
   B      toggle system audio T  toggle translation
-  R      restart             S  toggle settings panel
+  D      switch mic device   N  cycle source mode (mic/system/both)
+  A      open System Settings (Privacy) for access
+  R      restart (re-request access)  S  toggle settings panel
   O      toggle original     ↑↓ scroll transcript
   Q      quit
 
