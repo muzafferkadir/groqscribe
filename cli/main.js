@@ -431,10 +431,9 @@ function render() {
   const height = process.stdout.rows || 30;
   const settingsWidth = state.showSettings ? Math.min(38, Math.floor(width * 0.38)) : 0;
   const mainWidth = width - settingsWidth - (settingsWidth ? 1 : 0);
-  // header(1) + footer(1) + output(1) = 3 reserved rows, so the content
-  // (transcript + sidebar) fills everything in between and footer/output
-  // sit on the very last two rows without overlapping the sidebar.
-  const contentHeight = Math.max(5, height - 3);
+  // header(1) + hint(1) = 2 reserved rows; content (transcript + sidebar)
+  // fills everything in between and a minimal hint sits on the last row.
+  const contentHeight = Math.max(5, height - 2);
 
   const screen = [];
   const indicators = recordingIndicators();
@@ -450,9 +449,10 @@ function render() {
     else screen.push(left);
   }
 
-  const footer = ' Space:pause  M:mic  B:sys  D:micdev  N:src  L:lang  G:target  T:translate  R:retry  A:access  S:panel  O:orig  ↑↓:scroll  Q:quit ';
-  screen.push(color(trim(footer, width), 'inverse'));
-  screen.push(color(trim(` Output: ${state.outputPath}`, width), 'dim'));
+  const hintText = state.showSettings ? 'S · close' : 'settings · S';
+  const hint = color(hintText, 'dim');
+  const spaces = Math.max(0, width - stripAnsi(hint).length);
+  screen.push(' '.repeat(spaces) + hint);
   process.stdout.write('\x1b[H\x1b[2J' + screen.join('\n'));
 }
 
