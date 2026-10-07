@@ -1,6 +1,6 @@
 {
   "name": "groqscribe",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Terminal TUI for live microphone and system audio transcription with Groq Whisper.",
