@@ -166,3 +166,37 @@ export class SilenceSegmenter extends EventEmitter {
     return segment;
   }
 }
+
+// Speakers leak system audio into the mic. Mute the mic while system audio is
+// playing (+ gateMs tail) so the same speech isn't transcribed twice — but once
+// you start talking (system quiet for holdMs), the mic stays open until you
+// pause for holdMs, even if system audio starts meanwhile.
+// ponytail: starting to talk *over* system audio is still muted (your voice and its echo look the same here); real AEC (VoiceProcessingIO) if that matters.
+export class EchoGate {
+  constructor({ gateMs = 150, holdMs = 600, threshold = 0.012 } = {}) {
+    this.gateMs = gateMs;
+    this.holdMs = holdMs;
+    this.threshold = threshold;
+    this.lastSystemAt = -Infinity;
+    this.holdStartedAt = -Infinity;
+    this.holdUntil = -Infinity;
+  }
+
+  system(chunk, now = Date.now()) {
+    if (calculateRms16le(chunk) < this.threshold) return;
+    this.lastSystemAt = now;
+    // a hold that began just before system audio is its echo reaching the mic first, not you
+    if (now - this.holdStartedAt < this.gateMs) this.holdUntil = -Infinity;
+  }
+
+  mic(chunk, now = Date.now()) {
+    const holding = now < this.holdUntil;
+    const sinceSystem = now - this.lastSystemAt;
+    if (!holding && sinceSystem < this.gateMs) return Buffer.alloc(chunk.length);
+    if (calculateRms16le(chunk) >= this.threshold && (holding || sinceSystem >= this.holdMs)) {
+      if (!holding) this.holdStartedAt = now;
+      this.holdUntil = now + this.holdMs;
+    }
+    return chunk;
+  }
+}

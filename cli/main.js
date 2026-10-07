@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import process from 'node:process';
 import readline from 'node:readline';
-import { createWavBuffer, SilenceSegmenter } from '../src/audioUtils.js';
+import { createWavBuffer, EchoGate, SilenceSegmenter } from '../src/audioUtils.js';
 import { getWhisperLanguageName, looksLikeTurkishText, normalizeWhisperLanguage, transcribeAudioChunk, translateText, WHISPER_LANGUAGE_OPTIONS } from '../src/groqClient.js';
 import { RequestRateLimiter, normalizeUsage } from '../src/rateLimiter.js';
 
@@ -40,6 +40,8 @@ const DEFAULTS = {
   maxSegmentMs: 30000,
   longSegmentMs: 20000,
   longSegmentSilenceMs: 200,
+  echoGateMs: 150,
+  micHoldMs: 600,
   speechModel: 'whisper-large-v3-turbo',
   chatModel: 'llama-3.1-8b-instant',
   sourceLanguage: 'auto',
@@ -96,6 +98,11 @@ const state = {
 const captures = new Map();
 const sourceQueues = new Map();
 let quotaQueue = Promise.resolve();
+const echoGate = new EchoGate({
+  gateMs: Number(args.echoGateMs ?? DEFAULTS.echoGateMs),
+  holdMs: Number(args.micHoldMs ?? DEFAULTS.micHoldMs),
+  threshold: Number(args.threshold || DEFAULTS.threshold),
+});
 let renderTimer = null;
 let needsRender = true;
 
@@ -173,6 +180,8 @@ async function startOneCapture(source) {
 
   ffmpeg.stdout.on('data', (chunk) => {
     if (state.paused || !captures.has(source)) return;
+    if (source === 'system') echoGate.system(chunk);
+    if (source === 'mic') chunk = echoGate.mic(chunk);
     const emitted = segmenter.push(chunk);
     for (const segment of emitted) enqueueSegment(segment, source);
     requestRender();
@@ -1328,6 +1337,8 @@ Usage:
   groqscribe --reset-api-key          # ignore env/config and prompt for a new global API key
   groqscribe --no-save-api-key        # do not save a prompted API key
   groqscribe --long-segment-ms 20000 --long-segment-silence-ms 200
+  groqscribe --echo-gate-ms 150       # mute mic while system audio plays (+ tail ms); 0 = off
+  groqscribe --mic-hold-ms 600        # once you talk, keep mic open until you pause this long
   groqscribe --list-devices           # list available audio devices
   groqscribe --uninstall              # remove groqscribe and its config
   groqscribe --help                   # show this help

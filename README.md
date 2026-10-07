@@ -75,6 +75,8 @@ A blinking red `●` appears next to each active source (`MIC`/`SYS`) in the hea
 | `--no-save-api-key` | don't save a prompted API key |
 | `--list-devices` | list available audio devices |
 | `--long-segment-ms` / `--long-segment-silence-ms` | tuning |
+| `--echo-gate-ms <ms>` | when mic + system are both on, mute the mic while system audio plays plus this tail (default `150`, `0` = off) so speaker sound isn't transcribed twice |
+| `--mic-hold-ms <ms>` | once you start talking, keep the mic open (even if system audio starts) until you pause this long (default `600`) |
 | `--uninstall` | remove groqscribe and its config (`-y`, `--keep-config`) |
 | `--help` | show help |
 

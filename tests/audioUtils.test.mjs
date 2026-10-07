@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateRms16le, createWavBuffer, SilenceSegmenter } from '../src/audioUtils.js';
+import { calculateRms16le, createWavBuffer, EchoGate, SilenceSegmenter } from '../src/audioUtils.js';
 
 function frame(value, samples = 1600) {
   const buffer = Buffer.alloc(samples * 2);
@@ -89,4 +89,28 @@ test('SilenceSegmenter uses shorter silence threshold after long segment duratio
   emitted.push(...segmenter.push(frame(0)));
   assert.equal(emitted.length, 1);
   assert.equal(emitted[0].reason, 'short-silence-after-long-segment');
+});
+
+test('EchoGate mutes mic echo but keeps your ongoing talk open', () => {
+  const gate = new EchoGate({ gateMs: 150, holdMs: 600, threshold: 0.01 });
+  const loud = frame(4000);
+  const muted = (chunk) => calculateRms16le(chunk) === 0;
+
+  gate.system(loud, 1000);
+  assert.ok(muted(gate.mic(loud, 1050)), 'echo while system plays is muted');
+  assert.equal(gate.mic(loud, 1200), loud, 'after the tail the mic passes again');
+  gate.system(loud, 1300);
+  assert.ok(muted(gate.mic(loud, 1350)), 'echo tail in a short system pause does not latch the mic open');
+
+  assert.equal(gate.mic(loud, 3000), loud, 'you start talking with system quiet');
+  gate.system(loud, 3200);
+  assert.equal(gate.mic(loud, 3300), loud, 'system starts while you talk → mic stays open');
+  assert.equal(gate.mic(loud, 3800), loud, 'short pause keeps the hold');
+  gate.system(loud, 4500);
+  assert.ok(muted(gate.mic(loud, 4500)), 'you paused > holdMs → echo muted again');
+
+  const onset = new EchoGate({ gateMs: 150, holdMs: 600, threshold: 0.01 });
+  onset.mic(loud, 1000);
+  onset.system(loud, 1050);
+  assert.ok(muted(onset.mic(loud, 1100)), 'echo reaching the mic before system audio does not start a hold');
 });
