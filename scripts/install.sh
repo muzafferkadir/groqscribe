@@ -3,7 +3,12 @@
 # groqscribe installer
 # Repo:  https://github.com/muzafferkadir/groqscribe
 #
-# One-line install:
+# Recommended (verified) install — download, check its integrity, then run:
+#   curl -fsSL -o install.sh https://raw.githubusercontent.com/muzafferkadir/groqscribe/main/scripts/install.sh
+#   echo "<expected-sha256>  install.sh" | sha256sum -c -   # see release notes for the current hash
+#   bash install.sh
+#
+# Quick (unverified) one-line install — only use this over a trusted connection:
 #   curl -fsSL https://raw.githubusercontent.com/muzafferkadir/groqscribe/main/scripts/install.sh | bash
 #
 # Re-running this script updates groqscribe in place.
@@ -11,6 +16,7 @@
 set -euo pipefail
 
 REPO="https://github.com/muzafferkadir/groqscribe.git"
+REPO_REF="${GROQSCRIBE_REF:-main}"
 INSTALL_DIR="${GROQSCRIBE_DIR:-$HOME/.groqscribe}"
 BIN_DIR="${GROQSCRIBE_BIN_DIR:-$HOME/.local/bin}"
 BIN_NAME="groqscribe"
@@ -78,18 +84,18 @@ if [[ "$MACOS" -eq 1 ]] && ! command -v swiftc >/dev/null 2>&1; then
         (Microphone-only mode works without it.)"
 fi
 
-# ---- clone or update ----
+# ---- clone or update (pinned to REPO_REF so a tampered/mutated branch can't be swapped in silently) ----
 if [[ -d "$INSTALL_DIR/.git" ]]; then
   info "Updating existing groqscribe at $INSTALL_DIR"
-  git -C "$INSTALL_DIR" fetch --quiet --prune
-  git -C "$INSTALL_DIR" reset --quiet --hard "origin/$(git -C "$INSTALL_DIR" symbolic-ref --short HEAD 2>/dev/null || echo main)" \
-    || git -C "$INSTALL_DIR" pull --quiet --ff-only
+  git -C "$INSTALL_DIR" fetch --quiet --prune origin "$REPO_REF"
+  git -C "$INSTALL_DIR" reset --quiet --hard FETCH_HEAD
 else
   info "Cloning groqscribe into $INSTALL_DIR"
   rm -rf "$INSTALL_DIR"
-  git clone --quiet --depth 1 "$REPO" "$INSTALL_DIR"
+  git clone --quiet --depth 1 --branch "$REPO_REF" "$REPO" "$INSTALL_DIR"
 fi
 cd "$INSTALL_DIR"
+info "Checked out commit $(git -C "$INSTALL_DIR" rev-parse HEAD) ($REPO_REF)"
 
 # ---- Node dependencies ----
 info "Installing Node dependencies..."
